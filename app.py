@@ -14,7 +14,7 @@ job_data = {}
 def execute_code(lang, code, inp, job_id):
     output = ""
     file = ""
-
+    job_dir = ""
     if lang == "Python":
         file = f"program_{job_id}.py"
         cmd = ["python", file]
@@ -55,7 +55,7 @@ def execute_code(lang, code, inp, job_id):
                 subprocess.run(compile_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True, timeout=5)
                 classes = re.findall(r"(?<=class\s)\w+", code)
                 cleanup_files.extend([os.path.join(job_dir, f"{cls}.class") for cls in classes])
-                process = subprocess.run(["java", class_name], input=inp, stdout=subprocess.PIPE,
+                process = subprocess.run(["java", "-cp", job_dir, class_name], input=inp, stdout=subprocess.PIPE,
                                          stderr=subprocess.PIPE, universal_newlines=True, timeout=10)
                 output = process.stdout + process.stderr
             else:
