@@ -1,8 +1,9 @@
-from flask import Flask, request, jsonify
-import subprocess
 import os
 import re
+import subprocess
 import uuid
+import shutil
+from flask import Flask, request, jsonify
 from flask_cors import CORS
 
 app = Flask(__name__)
@@ -24,8 +25,15 @@ def execute_code(lang, code, inp, job_id):
         file = f"program_{job_id}.cpp"
         compile_cmd = ["g++", file, "-o", f"program_{job_id}.o"]
     elif lang == "Java":
+        job_dir = f"job_{job_id}"
+        os.makedirs(job_dir, exist_ok=True)
+        
         class_name = re.search(r"(?<=public\sclass\s)\w+(?=\s*\{)", code).group()
-        file = f"{class_name}.java"
+        file = os.path.join(job_dir, f"{class_name}.java")
+
+        with open(file, 'w') as f:
+            f.write(code)
+
         compile_cmd = ["javac", file]
     elif lang == "JavaScript":
         file = f"program_{job_id}.js"
@@ -46,7 +54,7 @@ def execute_code(lang, code, inp, job_id):
             elif lang == "Java":
                 subprocess.run(compile_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True, timeout=5)
                 classes = re.findall(r"(?<=class\s)\w+", code)
-                cleanup_files.extend([f"{cls}.class" for cls in classes])
+                cleanup_files.extend([os.path.join(job_dir, f"{cls}.class") for cls in classes])
                 process = subprocess.run(["java", class_name], input=inp, stdout=subprocess.PIPE,
                                          stderr=subprocess.PIPE, universal_newlines=True, timeout=10)
                 output = process.stdout + process.stderr
@@ -62,6 +70,8 @@ def execute_code(lang, code, inp, job_id):
             for file in cleanup_files:
                 if os.path.exists(file):
                     os.remove(file)
+            if os.path.exists(job_dir):
+                shutil.rmtree(job_dir)
     return output
 
 @app.route('/', methods=['POST'])
