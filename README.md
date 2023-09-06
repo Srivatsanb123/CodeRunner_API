@@ -92,7 +92,8 @@ print("Hello, World!")
 
 data = {
     "code": code,
-    "language": "Python"
+    "language": "Python",
+    "input": ""
 }
 
 response = requests.post(f"{api_url}/", json=data)
@@ -104,4 +105,4 @@ if response.status_code == 200:
 else:
     print("Error:", response.text)
 ```
-Thank you for paying a visit to my repo.Kindly visit my other repos too ...
+Thank you for paying a visit to this repo.Kindly visit my other repos too ...
