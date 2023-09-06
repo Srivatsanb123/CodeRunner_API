@@ -22,7 +22,7 @@ The **CodeRunner API** is a Flask-based web service that allows users to execute
   - **HTTP Method:** POST
   - **Input Data:** JSON payload with the following fields:
     - `code`: The code snippet to execute.
-    - `language`: The programming language (e.g., "Python", "C", "JavaScript").
+    - `language`: The programming language ("Python", "C", "C++", "Java", "JavaScript").
     - `input`: The input data for the code (if required).
 
 - **Get Job Status:** Check the status of a code execution job.
