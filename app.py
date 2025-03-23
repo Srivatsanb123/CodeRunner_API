@@ -7,91 +7,88 @@ from flask import Flask, request, jsonify
 from flask_cors import CORS
 
 app = Flask(__name__)
-cors = CORS(app)
+CORS(app)
 
-job_data = {}
-
-# Determine executable extension for Windows
 EXEC_EXT = ".exe" if os.name == "nt" else ""
+PYTHON_CMD = "python" if os.name == "nt" else "python3"
+BASE_DIR = "jobs"
+os.makedirs(BASE_DIR, exist_ok=True)
 
-def execute_code(lang, code, inp, job_id):
-    output = ""
-    file = ""
-    job_dir = ""
+def prepare_file(lang, code, job_id):
+    job_dir = os.path.join(BASE_DIR, job_id)
+    os.makedirs(job_dir, exist_ok=True)
 
     if lang == "Python":
-        file = f"program_{job_id}.py"
-        cmd = ["python", file]
+        file = os.path.join(job_dir, "program.py")
     elif lang == "C":
-        file = f"program_{job_id}.c"
-        compile_cmd = ["gcc", file, "-o", f"program_{job_id}{EXEC_EXT}"]
+        file = os.path.join(job_dir, "program.c")
+        compile_cmd = ["gcc", file, "-o", os.path.join(job_dir, f"program{EXEC_EXT}")]
     elif lang == "C++":
-        file = f"program_{job_id}.cpp"
-        compile_cmd = ["g++", file, "-o", f"program_{job_id}{EXEC_EXT}"]
+        file = os.path.join(job_dir, "program.cpp")
+        compile_cmd = ["g++", file, "-o", os.path.join(job_dir, f"program{EXEC_EXT}")]
     elif lang == "Java":
-        job_dir = f"job_{job_id}"
-        os.makedirs(job_dir, exist_ok=True)
         class_match = re.search(r"(?<=public\sclass\s)\w+", code)
         if not class_match:
-            return "Error: No public class found in Java code."
+            return None, "Error: No public class found in Java code."
         class_name = class_match.group()
         file = os.path.join(job_dir, f"{class_name}.java")
         compile_cmd = ["javac", file]
     elif lang == "JavaScript":
-        file = f"program_{job_id}.js"
-        cmd = ["node", file]
+        file = os.path.join(job_dir, "program.js")
+    else:
+        return None, "Error: Unsupported language."
     
-    if file:
-        with open(file, 'w') as f:
-            f.write(code)
-        cleanup_files = [file]
+    with open(file, 'w') as f:
+        f.write(code)
+    
+    if lang in ["C", "C++", "Java"]:
         try:
-            if lang in ["C", "C++"]:
-                subprocess.run(compile_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True, timeout=5)
-                cleanup_files.append(f"program_{job_id}{EXEC_EXT}")
-                process = subprocess.run([f"./program_{job_id}{EXEC_EXT}"], input=inp, stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True, timeout=10)
-            elif lang == "Java":
-                subprocess.run(compile_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True, timeout=5)
-                process = subprocess.run(["java", "-cp", job_dir, class_name], input=inp, stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True, timeout=10)
-            else:
-                process = subprocess.run(cmd, input=inp, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=10)
-            
-            output = process.stdout + process.stderr
-        except subprocess.CalledProcessError as error:
-            output = error.stderr or "Compilation error."
-        except subprocess.TimeoutExpired:
-            output = "Error: Code execution timed out (possible infinite loop)."
-        finally:
-            for f in cleanup_files:
-                if os.path.exists(f):
-                    os.remove(f)
-            if job_dir and os.path.exists(job_dir):
-                shutil.rmtree(job_dir)
+            subprocess.run(compile_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True, timeout=10)
+        except subprocess.CalledProcessError as e:
+            return None, e.stderr.decode()
     
-    return output
+    return file, job_dir
+
+def execute_code(lang, file, inp, job_id, job_dir):
+    if lang == "Python":
+        cmd = [PYTHON_CMD, file]
+    elif lang in ["C", "C++"]:
+        cmd = [os.path.join(job_dir, f"program{EXEC_EXT}")]
+    elif lang == "Java":
+        class_name = os.path.splitext(os.path.basename(file))[0]
+        cmd = ["java", "-cp", job_dir, class_name]
+    elif lang == "JavaScript":
+        cmd = ["node", file]
+    else:
+        return "Error: Unsupported language."
+    
+    try:
+        process = subprocess.run(cmd, input=inp, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=10)
+        return process.stdout + process.stderr
+    except subprocess.TimeoutExpired:
+        return "Error: Code execution timed out."
+
+def cleanup_files(job_dir):
+    shutil.rmtree(job_dir, ignore_errors=True)
 
 @app.route('/', methods=['POST'])
 def execute_code_api():
-    if request.method == 'POST':
-        data = request.get_json()
-        code = data.get('code')
-        lang = data.get('language')
-        inp = data.get('input', '')
-        job_id = str(uuid.uuid4())
-        job_data[job_id] = {'status': 'running', 'output': ''}
-        try:
-            output = execute_code(lang, code, inp, job_id)
-            job_data[job_id]['status'] = 'completed'
-            job_data[job_id]['output'] = output
-            response_data = {'job_id': job_id, 'status': 'completed', 'output': output}
-            job_data.pop(job_id)
-            return jsonify(response_data)
-        except Exception as e:
-            return jsonify({'status': 'error', 'message': str(e)})
-
-@app.route('/status/<job_id>', methods=['GET'])
-def get_job_status(job_id):
-    return jsonify(job_data.get(job_id, {'status': 'error', 'message': 'Job not found'}))
+    data = request.get_json()
+    code = data.get('code')
+    lang = data.get('language')
+    inputs = data.get('inputs', [])
+    
+    job_id = str(uuid.uuid4())
+    file, job_dir = prepare_file(lang, code, job_id)
+    if file is None:
+        return jsonify({'status': 'error', 'message': job_dir})
+    
+    try:
+        outputs = [execute_code(lang, file, inp, job_id, job_dir) for inp in inputs]
+    finally:
+        cleanup_files(job_dir)
+    
+    return jsonify({'job_id': job_id, 'status': 'completed', 'outputs': outputs})
 
 if __name__ == '__main__':
     app.run(debug=True)
