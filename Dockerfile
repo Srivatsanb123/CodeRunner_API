@@ -11,7 +11,7 @@ RUN apt-get update && \
   gcc \
   g++ \
   openjdk-17-jdk && \
-  curl -fsSL https://deb.nodesource.com/setup_20.x | bash - && \
+  curl -fsSL https://deb.nodesource.com/setup_22.x | bash - && \
   apt-get install -y --no-install-recommends nodejs && \
   apt-get clean && \
   rm -rf /var/lib/apt/lists/*
@@ -19,7 +19,7 @@ RUN apt-get update && \
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY app.py ./
+COPY app.py .env ./
 
 EXPOSE 5000
 
